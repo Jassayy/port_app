@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import { neobrutalism } from "@clerk/themes";
+import Link from "next/link";
 
 const geistSans = Geist({
      variable: "--font-geist-sans",
@@ -26,14 +27,25 @@ export default function RootLayout({
 }>) {
      return (
           <ClerkProvider
-          appearance={{
-               baseTheme: neobrutalism
-          }}
+               appearance={{
+                    baseTheme: neobrutalism,
+               }}
           >
-               <html lang="en">
+               <html lang="en" suppressHydrationWarning>
                     <body
+                         suppressHydrationWarning
                          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
                     >
+                         <header className="border-b">
+                              <div className="max-w-6xl mx-auto p-4 flex items-center gap-6">
+                                   <Link href="/" className="font-semibold">
+                                        Port
+                                   </Link>
+                                   <nav className="text-sm flex gap-4">
+                                        <Link href="/dashboard">Dashboard</Link>
+                                   </nav>
+                              </div>
+                         </header>
                          {children}
                     </body>
                </html>
