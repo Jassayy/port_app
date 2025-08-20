@@ -71,17 +71,23 @@
 
 /* Cartoon-style button animations */
 .cartoon-button {
-  @apply transform transition-all duration-200 hover:scale-105 active:scale-95;
+  @apply transform transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer;
 }
 
-/* Cartoon borders */
+/* Enhanced cartoon borders */
 .cartoon-border {
   @apply border-4 border-black shadow-lg;
+}
+
+/* Custom border widths */
+.border-3 {
+  border-width: 3px;
 }
 
 /* Glowing effect */
 .glow-effect {
   @apply shadow-xl drop-shadow-lg;
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.3), 0 10px 25px rgba(0, 0, 0, 0.1);
 }
 
 /* Vibrant text gradient */
@@ -92,4 +98,48 @@
 /* Card hover effects */
 .cartoon-card {
   @apply transform transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl border-4 border-black;
+  box-shadow: 8px 8px 0px rgba(0, 0, 0, 0.2);
+}
+
+.cartoon-card:hover {
+  box-shadow: 12px 12px 0px rgba(0, 0, 0, 0.3);
+}
+
+/* Responsive spacing utilities */
+@media (max-width: 768px) {
+  .cartoon-card {
+    @apply hover:translate-y-0;
+  }
+}
+
+/* Custom scroll bar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded-full;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gradient-to-b from-purple-400 to-pink-400 rounded-full border-2 border-black;
+}
+
+/* Loading spinner enhancement */
+@keyframes cartoonSpin {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(90deg) scale(1.1); }
+  50% { transform: rotate(180deg) scale(1); }
+  75% { transform: rotate(270deg) scale(1.1); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+.cartoon-spinner {
+  animation: cartoonSpin 1s linear infinite;
+}
+
+/* Enhanced focus states */
+button:focus-visible,
+input:focus-visible {
+  @apply outline-none ring-4 ring-purple-400 ring-opacity-50;
 }

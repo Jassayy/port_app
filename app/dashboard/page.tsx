@@ -1,84 +1,79 @@
 
+"use client";
+
+import { useUser } from "@clerk/nextjs";
+import { useState } from "react";
 import ConnectEthereum from "@/components/walletComponent/ConnectEthereum";
 import ConnectPhantom from "@/components/walletComponent/ConnectPhantom";
 import Portfolio from "@/components/walletComponent/Portfolio";
-import { UserButton } from "@clerk/nextjs";
-import React from "react";
 
-const page = () => {
+export default function Dashboard() {
+     const { user } = useUser();
+     const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+     const triggerRefresh = () => {
+          setRefreshTrigger(prev => prev + 1);
+     };
+
      return (
           <div className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-50 to-blue-100">
                {/* Header */}
-               <header className="w-full bg-gradient-to-r from-pink-400 via-purple-500 to-blue-500 border-b-8 border-black shadow-2xl">
-                    <div className="max-w-7xl mx-auto px-8 py-6 flex items-center justify-between">
+               <header className="w-full px-8 py-6 border-b-4 border-black bg-white shadow-xl">
+                    <div className="max-w-7xl mx-auto flex justify-between items-center">
                          <div className="flex items-center space-x-4">
-                              <div className="text-4xl font-black text-white drop-shadow-lg">
-                                   🎨 CartoonPort
+                              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full border-4 border-black flex items-center justify-center shadow-lg">
+                                   <span className="text-white font-black text-xl">💎</span>
                               </div>
-                         </div>
-                         <div className="flex items-center space-x-4">
-                              <UserButton afterSignOutUrl="/" />
+                              <div>
+                                   <h1 className="text-3xl font-black bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                                        Dashboard
+                                   </h1>
+                                   <p className="text-lg font-bold text-gray-600">Welcome back, {user?.firstName || 'Crypto Enthusiast'}! 👋</p>
+                              </div>
                          </div>
                     </div>
                </header>
 
                {/* Main Content */}
-               <div className="max-w-7xl mx-auto px-8 py-12 space-y-12">
-                    {/* Welcome Section */}
-                    <div className="text-center space-y-6">
-                         <h1 className="text-6xl font-black gradient-text">
-                              🚀 Your Dashboard
-                         </h1>
-                         <p className="text-2xl font-bold text-gray-600">
-                              Connect your wallets and track your crypto in style! ✨
-                         </p>
-                    </div>
-
-                    {/* Wallet Connection Section */}
-                    <div className="cartoon-card bg-gradient-to-br from-white via-yellow-50 to-orange-50 p-8 rounded-3xl">
-                         <div className="text-center mb-8">
-                              <h2 className="text-4xl font-black gradient-text mb-4">
+               <main className="max-w-7xl mx-auto px-8 py-12">
+                    <div className="space-y-12">
+                         {/* Connect Wallets Section */}
+                         <section className="cartoon-card bg-white p-8 rounded-3xl">
+                              <h2 className="text-4xl font-black mb-8 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                                    🔗 Connect Your Wallets
                               </h2>
-                              <p className="text-xl font-bold text-gray-600">
-                                   Choose your favorite wallets to get started! 🎯
-                              </p>
-                         </div>
-                         
-                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-4xl mx-auto">
-                              <div className="cartoon-card bg-gradient-to-br from-blue-200 to-purple-200 p-8 rounded-3xl">
-                                   <div className="text-center mb-6">
-                                        <div className="text-5xl mb-4">🔷</div>
-                                        <h3 className="text-3xl font-black text-blue-700 mb-2">
-                                             Ethereum Network
-                                        </h3>
-                                        <p className="text-lg font-bold text-gray-600">
-                                             Connect with MetaMask 🦊
-                                        </p>
+                              
+                              <div className="grid md:grid-cols-2 gap-8">
+                                   <div className="space-y-6">
+                                        <div className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl border-3 border-blue-200">
+                                             <h3 className="text-2xl font-black text-gray-800 mb-4 flex items-center gap-3">
+                                                  🦄 Ethereum Wallet
+                                             </h3>
+                                             <ConnectEthereum onConnect={triggerRefresh} />
+                                        </div>
                                    </div>
-                                   <ConnectEthereum />
+                                   
+                                   <div className="space-y-6">
+                                        <div className="p-6 bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl border-3 border-purple-200">
+                                             <h3 className="text-2xl font-black text-gray-800 mb-4 flex items-center gap-3">
+                                                  👻 Solana Wallet
+                                             </h3>
+                                             <ConnectPhantom onConnect={triggerRefresh} />
+                                        </div>
+                                   </div>
                               </div>
+                         </section>
 
-                              <div className="cartoon-card bg-gradient-to-br from-purple-200 to-pink-200 p-8 rounded-3xl">
-                                   <div className="text-center mb-6">
-                                        <div className="text-5xl mb-4">🌟</div>
-                                        <h3 className="text-3xl font-black text-purple-700 mb-2">
-                                             Solana Network
-                                        </h3>
-                                        <p className="text-lg font-bold text-gray-600">
-                                             Connect with Phantom 👻
-                                        </p>
-                                   </div>
-                                   <ConnectPhantom />
-                              </div>
-                         </div>
+                         {/* Portfolio Section */}
+                         <section className="cartoon-card bg-white p-8 rounded-3xl">
+                              <h2 className="text-4xl font-black mb-8 bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+                                   📊 Your Portfolio
+                              </h2>
+                              
+                              <Portfolio key={refreshTrigger} />
+                         </section>
                     </div>
-
-                    {/* Portfolio Section */}
-                    <Portfolio />
-               </div>
+               </main>
           </div>
      );
-};
-
-export default page;
+}

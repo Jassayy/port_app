@@ -1,153 +1,117 @@
 
 "use client";
 
-import { WalletType } from "@prisma/client";
-import axios from "axios";
-import React, { useEffect, useState } from "react";
-import { Button } from "../ui/button";
+import { useState } from "react";
 import toast from "react-hot-toast";
 
-const ConnectPhantom = () => {
-     const [account, setAccount] = useState<string | null>(null);
-     const [balance, setBalance] = useState<string | null>(null);
-     const [loading, setLoading] = useState(false);
-     const [error, setError] = useState<string | null>(null);
+interface ConnectPhantomProps {
+     onConnect?: () => void;
+}
 
-     useEffect(() => {
-          const stored = localStorage.getItem("connected_sol_address");
-          if (stored) {
-               setAccount(stored);
-               void fetchBalance(stored);
-          }
-     }, []);
+export default function ConnectPhantom({ onConnect }: ConnectPhantomProps) {
+     const [isConnecting, setIsConnecting] = useState(false);
+     const [walletAddress, setWalletAddress] = useState<string | null>(null);
+     const [balance, setBalance] = useState<number | null>(null);
 
      const connectWallet = async () => {
-          const provider = (window as any).solana;
-          if (!provider?.isPhantom) {
-               toast.error("Phantom Wallet not found! Please install it first 👻");
-               return;
-          }
-
+          setIsConnecting(true);
+          
           try {
-               const resp = await provider.connect();
-               const address = resp.publicKey.toString();
-               setAccount(address);
-               localStorage.setItem("connected_sol_address", address);
-
-               toast.success("Phantom wallet connected! 🎉");
-
-               try {
-                    await axios.post("/api/wallets", {
-                         address,
-                         type: WalletType.SOLANA,
-                    });
-                    console.log("Wallet Connected successfully.");
-               } catch (err: any) {
-                    if (err?.response?.status !== 401) {
-                         console.error("Error connecting your phantom wallet. : ", err);
-                    }
+               if (!window.solana) {
+                    toast.error("Phantom wallet not found! Please install Phantom to continue. 👻");
+                    return;
                }
-               await fetchBalance(address);
-          } catch (error) {
-               toast.error("Failed to connect Phantom wallet");
-               console.error("Phantom connection error:", error);
-          }
-     };
 
-     const disconnectWallet = async () => {
-          if (!account) return;
+               const response = await window.solana.connect();
+               const address = response.publicKey.toString();
+               setWalletAddress(address);
 
-          try {
-               await axios.post("/api/wallets/disconnect", {
-                    address: account,
+               // Save wallet to database
+               const saveResponse = await fetch("/api/wallets", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                         address,
+                         type: "SOLANA",
+                    }),
                });
-               toast.success("Wallet disconnected successfully! 👋");
-          } catch (error) {
-               console.error("Error disconnecting wallet. : ", error);
-          }
 
-          setAccount(null);
-          setBalance(null);
-          localStorage.removeItem("connected_sol_address");
-     };
+               if (!saveResponse.ok) {
+                    const error = await saveResponse.json();
+                    toast.error(error.error || "Failed to save wallet");
+                    return;
+               }
 
-     const fetchBalance = async (addr?: String) => {
-          const address = addr || account;
-          if (!address) return;
-
-          setLoading(true);
-          setError(null);
-          try {
-               const res = await axios.post("/api/balance", {
-                    address,
-                    type: "SOLANA",
+               // Fetch balance
+               const balanceResponse = await fetch("/api/balance", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                         address,
+                         type: "SOLANA",
+                    }),
                });
-               setBalance(res.data.balance.amount.toFixed(4));
-               toast.success("Balance updated! 💰");
-          } catch (err: any) {
-               console.error("Error fetching Solana Balance : ", err);
-               const errorMsg = "Failed to fetch SOL balance";
-               setError(errorMsg);
-               toast.error(errorMsg);
+
+               if (balanceResponse.ok) {
+                    const balanceData = await balanceResponse.json();
+                    setBalance(balanceData.balance.amount);
+               }
+
+               toast.success("🎉 Phantom wallet connected successfully!");
+               onConnect?.();
+          } catch (error) {
+               console.error("Error connecting wallet:", error);
+               toast.error("Failed to connect wallet. Please try again! 😕");
           } finally {
-               setLoading(false);
+               setIsConnecting(false);
           }
      };
+
+     const disconnectWallet = () => {
+          setWalletAddress(null);
+          setBalance(null);
+          toast.success("Wallet disconnected! 👋");
+     };
+
+     if (walletAddress) {
+          return (
+               <div className="space-y-4">
+                    <div className="p-4 bg-green-50 border-3 border-green-200 rounded-xl">
+                         <p className="text-lg font-bold text-gray-800 mb-2">✅ Connected!</p>
+                         <p className="text-sm font-semibold text-gray-600 break-all">
+                              Address: {walletAddress}
+                         </p>
+                         {balance !== null && (
+                              <p className="text-lg font-bold text-green-600 mt-2">
+                                   Balance: {balance.toFixed(4)} SOL
+                              </p>
+                         )}
+                    </div>
+                    
+                    <button
+                         onClick={disconnectWallet}
+                         className="cartoon-button bg-red-500 hover:bg-red-400 text-white font-bold px-6 py-3 rounded-xl border-3 border-black shadow-lg w-full"
+                    >
+                         Disconnect Wallet
+                    </button>
+               </div>
+          );
+     }
 
      return (
-          <div className="space-y-4">
-               <div className="flex flex-col gap-3">
-                    {!account ? (
-                         <Button
-                              onClick={connectWallet}
-                              className="cartoon-button bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-400 hover:to-pink-500 text-white font-black px-6 py-4 rounded-2xl border-4 border-black text-lg shadow-lg w-full"
-                         >
-                              👻 Connect Phantom
-                         </Button>
-                    ) : (
-                         <div className="flex flex-col gap-3">
-                              <Button
-                                   onClick={disconnectWallet}
-                                   className="cartoon-button bg-gradient-to-r from-red-400 to-pink-500 hover:from-red-300 hover:to-pink-400 text-white font-black px-6 py-3 rounded-2xl border-4 border-black text-lg shadow-lg"
-                              >
-                                   🔌 Disconnect Wallet
-                              </Button>
-                              <Button
-                                   onClick={() => fetchBalance()}
-                                   disabled={loading}
-                                   className="cartoon-button bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-300 hover:to-blue-400 text-white font-black px-6 py-3 rounded-2xl border-4 border-black text-lg shadow-lg"
-                              >
-                                   {loading ? "🔄 Loading..." : "🔃 Refresh Balance"}
-                              </Button>
-                         </div>
-                    )}
-               </div>
-
-               {account && (
-                    <div className="cartoon-card bg-gradient-to-br from-purple-100 to-pink-100 p-4 rounded-2xl">
-                         <div className="text-center space-y-2">
-                              <div className="text-lg font-bold text-purple-700">🔗 Connected</div>
-                              <div className="text-sm font-semibold text-gray-600 break-all">
-                                   {account}
-                              </div>
-                              <div className="text-xl font-black text-green-600">
-                                   {loading
-                                        ? "⏳ Fetching..."
-                                        : balance
-                                        ? `💰 ${balance} SOL`
-                                        : "—"}
-                              </div>
-                         </div>
-                    </div>
+          <button
+               onClick={connectWallet}
+               disabled={isConnecting}
+               className="cartoon-button bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-400 hover:to-pink-500 disabled:from-gray-400 disabled:to-gray-500 text-white font-black px-8 py-4 rounded-xl border-3 border-black shadow-lg w-full text-lg glow-effect"
+          >
+               {isConnecting ? (
+                    <span className="flex items-center justify-center gap-2">
+                         <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                         Connecting...
+                    </span>
+               ) : (
+                    "🔗 Connect Phantom"
                )}
-
-               {error && (
-                    <div className="cartoon-border bg-red-100 border-red-500 text-red-700 p-3 rounded-2xl text-center font-bold">
-                         ⚠️ {error}
-                    </div>
-               )}
-          </div>
+          </button>
      );
-};
-
-export default ConnectPhantom;
+}

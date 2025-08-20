@@ -1,154 +1,122 @@
 
 "use client";
-import React, { useEffect, useState } from "react";
-import axios from "axios";
-import { WalletType } from "@prisma/client";
-import { Button } from "../ui/button";
+
+import { useState } from "react";
 import toast from "react-hot-toast";
 
-const ConnectEthereum = () => {
-     const [account, setAccount] = useState<string | null>(null);
-     const [balance, setBalance] = useState<string | null>(null);
-     const [error, setError] = useState<string | null>(null);
-     const [loading, setLoading] = useState(false);
+interface ConnectEthereumProps {
+     onConnect?: () => void;
+}
 
-     useEffect(() => {
-          const stored = localStorage.getItem("connected_eth_address");
-          if (stored) {
-               setAccount(stored);
-               void fetchBalance(stored);
-          }
-     }, []);
+export default function ConnectEthereum({ onConnect }: ConnectEthereumProps) {
+     const [isConnecting, setIsConnecting] = useState(false);
+     const [walletAddress, setWalletAddress] = useState<string | null>(null);
+     const [balance, setBalance] = useState<number | null>(null);
 
      const connectWallet = async () => {
-          if (!window.ethereum) {
-               toast.error("MetaMask not found! Please install it first 🦊");
-               return;
-          }
-
+          setIsConnecting(true);
+          
           try {
+               if (!window.ethereum) {
+                    toast.error("MetaMask not found! Please install MetaMask to continue. 🦊");
+                    return;
+               }
+
                const accounts = await window.ethereum.request({
                     method: "eth_requestAccounts",
                });
 
-               const address = accounts[0];
-               setAccount(address);
-               localStorage.setItem("connected_eth_address", address);
+               if (accounts.length > 0) {
+                    const address = accounts[0];
+                    setWalletAddress(address);
 
-               toast.success("Ethereum wallet connected! 🎉");
-
-               try {
-                    await axios.post("/api/wallets", {
-                         address,
-                         type: WalletType.ETHEREUM,
+                    // Save wallet to database
+                    const response = await fetch("/api/wallets", {
+                         method: "POST",
+                         headers: { "Content-Type": "application/json" },
+                         body: JSON.stringify({
+                              address,
+                              type: "ETHEREUM",
+                         }),
                     });
-                    console.log("Wallet connected successfully.");
-               } catch (err: any) {
-                    if (err?.response?.status !== 401) {
-                         console.error("Error connecting wallet: ", err);
+
+                    if (!response.ok) {
+                         const error = await response.json();
+                         toast.error(error.error || "Failed to save wallet");
+                         return;
                     }
+
+                    // Fetch balance
+                    const balanceResponse = await fetch("/api/balance", {
+                         method: "POST",
+                         headers: { "Content-Type": "application/json" },
+                         body: JSON.stringify({
+                              address,
+                              type: "ETHEREUM",
+                         }),
+                    });
+
+                    if (balanceResponse.ok) {
+                         const balanceData = await balanceResponse.json();
+                         setBalance(balanceData.balance.amount);
+                    }
+
+                    toast.success("🎉 Ethereum wallet connected successfully!");
+                    onConnect?.();
                }
-               await fetchBalance(address);
           } catch (error) {
-               toast.error("Failed to connect wallet");
-               console.error("Wallet connection error:", error);
-          }
-     };
-
-     const disconnectWallet = async () => {
-          if (!account) return;
-
-          try {
-               await axios.post("/api/wallets/disconnect", {
-                    address: account,
-               });
-               toast.success("Wallet disconnected successfully! 👋");
-          } catch (err) {
-               console.error("Error disconnecting wallet");
-          }
-
-          setAccount(null);
-          setBalance(null);
-          localStorage.removeItem("connected_eth_address");
-     };
-
-     const fetchBalance = async (addr?: string) => {
-          const address = addr || account;
-          if (!address) return;
-
-          setLoading(true);
-          setError(null);
-          try {
-               const res = await axios.post("/api/balance", {
-                    address,
-                    type: "ETHEREUM",
-               });
-               setBalance(res.data.balance.amount.toFixed(4));
-               toast.success("Balance updated! 💰");
-          } catch (err: any) {
-               console.error("Error fetching Ethereum Balance : ", err);
-               const errorMsg = "Failed to fetch ETH balance";
-               setError(errorMsg);
-               toast.error(errorMsg);
+               console.error("Error connecting wallet:", error);
+               toast.error("Failed to connect wallet. Please try again! 😕");
           } finally {
-               setLoading(false);
+               setIsConnecting(false);
           }
      };
+
+     const disconnectWallet = () => {
+          setWalletAddress(null);
+          setBalance(null);
+          toast.success("Wallet disconnected! 👋");
+     };
+
+     if (walletAddress) {
+          return (
+               <div className="space-y-4">
+                    <div className="p-4 bg-green-50 border-3 border-green-200 rounded-xl">
+                         <p className="text-lg font-bold text-gray-800 mb-2">✅ Connected!</p>
+                         <p className="text-sm font-semibold text-gray-600 break-all">
+                              Address: {walletAddress}
+                         </p>
+                         {balance !== null && (
+                              <p className="text-lg font-bold text-green-600 mt-2">
+                                   Balance: {balance.toFixed(4)} ETH
+                              </p>
+                         )}
+                    </div>
+                    
+                    <button
+                         onClick={disconnectWallet}
+                         className="cartoon-button bg-red-500 hover:bg-red-400 text-white font-bold px-6 py-3 rounded-xl border-3 border-black shadow-lg w-full"
+                    >
+                         Disconnect Wallet
+                    </button>
+               </div>
+          );
+     }
 
      return (
-          <div className="space-y-4">
-               <div className="flex flex-col gap-3">
-                    {!account ? (
-                         <Button
-                              onClick={connectWallet}
-                              className="cartoon-button bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-400 hover:to-purple-500 text-white font-black px-6 py-4 rounded-2xl border-4 border-black text-lg shadow-lg w-full"
-                         >
-                              🦊 Connect MetaMask
-                         </Button>
-                    ) : (
-                         <div className="flex flex-col gap-3">
-                              <Button
-                                   onClick={disconnectWallet}
-                                   className="cartoon-button bg-gradient-to-r from-red-400 to-pink-500 hover:from-red-300 hover:to-pink-400 text-white font-black px-6 py-3 rounded-2xl border-4 border-black text-lg shadow-lg"
-                              >
-                                   🔌 Disconnect Wallet
-                              </Button>
-                              <Button
-                                   onClick={() => fetchBalance()}
-                                   disabled={loading}
-                                   className="cartoon-button bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-300 hover:to-blue-400 text-white font-black px-6 py-3 rounded-2xl border-4 border-black text-lg shadow-lg"
-                              >
-                                   {loading ? "🔄 Loading..." : "🔃 Refresh Balance"}
-                              </Button>
-                         </div>
-                    )}
-               </div>
-
-               {account && (
-                    <div className="cartoon-card bg-gradient-to-br from-blue-100 to-purple-100 p-4 rounded-2xl">
-                         <div className="text-center space-y-2">
-                              <div className="text-lg font-bold text-blue-700">🔗 Connected</div>
-                              <div className="text-sm font-semibold text-gray-600 break-all">
-                                   {account}
-                              </div>
-                              <div className="text-xl font-black text-green-600">
-                                   {loading
-                                        ? "⏳ Fetching..."
-                                        : balance
-                                        ? `💰 ${balance} ETH`
-                                        : "—"}
-                              </div>
-                         </div>
-                    </div>
+          <button
+               onClick={connectWallet}
+               disabled={isConnecting}
+               className="cartoon-button bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-400 hover:to-purple-500 disabled:from-gray-400 disabled:to-gray-500 text-white font-black px-8 py-4 rounded-xl border-3 border-black shadow-lg w-full text-lg glow-effect"
+          >
+               {isConnecting ? (
+                    <span className="flex items-center justify-center gap-2">
+                         <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                         Connecting...
+                    </span>
+               ) : (
+                    "🔗 Connect MetaMask"
                )}
-
-               {error && (
-                    <div className="cartoon-border bg-red-100 border-red-500 text-red-700 p-3 rounded-2xl text-center font-bold">
-                         ⚠️ {error}
-                    </div>
-               )}
-          </div>
+          </button>
      );
-};
-
-export default ConnectEthereum;
+}

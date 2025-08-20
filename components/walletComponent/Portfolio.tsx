@@ -1,419 +1,361 @@
-
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
-import axios from "axios";
-import { Button } from "../ui/button";
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Tooltip } from "recharts";
+
+import { useState, useEffect } from "react";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import toast from "react-hot-toast";
 
-type Network = "ETHEREUM" | "SOLANA";
+interface Token {
+     symbol: string;
+     amount: number;
+     usd: number;
+     address?: string;
+     mint?: string;
+}
 
-type PortfolioData = {
-     native: { symbol: string; amount: number; usd: number };
-     tokens: Array<{ symbol: string; amount: number; usd: number; address?: string; mint?: string }>;
-     totals: { usd: number };
-};
+interface PortfolioData {
+     native: {
+          symbol: string;
+          amount: number;
+          usd: number;
+     };
+     tokens: Token[];
+     totals: {
+          usd: number;
+     };
+}
 
-const numberFormat = (n: number) =>
-     n.toLocaleString(undefined, { maximumFractionDigits: 6 });
-
-const usdFormat = (n: number) =>
-     n.toLocaleString(undefined, { style: "currency", currency: "USD" });
-
-const VIBRANT_COLORS = [
-     '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', 
-     '#F7DC6F', '#BB8FCE', '#85C1E9', '#F8C471', '#82E0AA'
-];
-
-const Portfolio: React.FC = () => {
-     const [ethData, setEthData] = useState<PortfolioData | null>(null);
-     const [solData, setSolData] = useState<PortfolioData | null>(null);
+export default function Portfolio() {
+     const [ethereumData, setEthereumData] = useState<PortfolioData | null>(null);
+     const [solanaData, setSolanaData] = useState<PortfolioData | null>(null);
      const [loading, setLoading] = useState(false);
-     const [error, setError] = useState<string | null>(null);
-     const [selectedView, setSelectedView] = useState<'combined' | 'ethereum' | 'solana'>('combined');
+     const [connectedWallets, setConnectedWallets] = useState<string[]>([]);
+     const [selectedChain, setSelectedChain] = useState<"all" | "ethereum" | "solana">("all");
 
+     // Fetch connected wallets
      useEffect(() => {
-          void loadAllPortfolios();
+          fetchConnectedWallets();
      }, []);
 
-     const loadAllPortfolios = async () => {
-          const ethAddress = localStorage.getItem("connected_eth_address");
-          const solAddress = localStorage.getItem("connected_sol_address");
-          
-          if (!ethAddress && !solAddress) {
-               toast.error("Please connect at least one wallet first! 🔗");
-               return;
-          }
-
-          setLoading(true);
-          setError(null);
-          
+     const fetchConnectedWallets = async () => {
           try {
-               const promises = [];
-               
-               if (ethAddress) {
-                    promises.push(
-                         axios.post("/api/portfolio", {
-                              address: ethAddress,
-                              network: "ETHEREUM",
-                         }).then(res => ({ type: 'eth', data: res.data }))
-                    );
-               }
-               
-               if (solAddress) {
-                    promises.push(
-                         axios.post("/api/portfolio", {
-                              address: solAddress,
-                              network: "SOLANA",
-                         }).then(res => ({ type: 'sol', data: res.data }))
-                    );
-               }
+               const response = await fetch("/api/wallets");
+               if (response.ok) {
+                    const data = await response.json();
+                    setConnectedWallets(data.wallets || []);
 
-               const results = await Promise.all(promises);
-               
-               results.forEach(result => {
-                    if (result.type === 'eth') {
-                         setEthData(result.data);
-                    } else {
-                         setSolData(result.data);
+                    // Auto-fetch portfolio data for connected wallets
+                    if (data.wallets && data.wallets.length > 0) {
+                         fetchPortfolioData(data.wallets);
                     }
-               });
+               }
+          } catch (error) {
+               console.error("Error fetching wallets:", error);
+          }
+     };
 
-               toast.success("Portfolio loaded successfully! 🎉");
-               
-          } catch (err: any) {
-               console.error(err);
-               const errorMsg = err?.response?.data?.error || "Failed to fetch portfolio data";
-               setError(errorMsg);
-               toast.error(errorMsg);
+     const fetchPortfolioData = async (wallets: any[]) => {
+          setLoading(true);
+
+          try {
+               for (const wallet of wallets) {
+                    const response = await fetch("/api/portfolio", {
+                         method: "POST",
+                         headers: { "Content-Type": "application/json" },
+                         body: JSON.stringify({
+                              address: wallet.address,
+                              network: wallet.type,
+                         }),
+                    });
+
+                    if (response.ok) {
+                         const data = await response.json();
+                         if (wallet.type === "ETHEREUM") {
+                              setEthereumData(data);
+                         } else if (wallet.type === "SOLANA") {
+                              setSolanaData(data);
+                         }
+                    }
+               }
+          } catch (error) {
+               console.error("Error fetching portfolio:", error);
+               toast.error("Failed to fetch portfolio data");
           } finally {
                setLoading(false);
           }
      };
 
-     const combinedData = useMemo(() => {
-          if (!ethData && !solData) return null;
-          
-          const totalUsd = (ethData?.totals.usd || 0) + (solData?.totals.usd || 0);
-          const allTokens = [
-               ...(ethData ? [{ ...ethData.native, network: 'Ethereum' }] : []),
-               ...(solData ? [{ ...solData.native, network: 'Solana' }] : []),
-               ...(ethData?.tokens.map(t => ({ ...t, network: 'Ethereum' })) || []),
-               ...(solData?.tokens.map(t => ({ ...t, network: 'Solana' })) || [])
-          ];
-          
-          return { totalUsd, allTokens };
-     }, [ethData, solData]);
-
-     const pieChartData = useMemo(() => {
-          if (selectedView === 'combined' && combinedData) {
-               return combinedData.allTokens
-                    .filter(token => token.usd > 1) // Only show tokens worth more than $1
-                    .map((token, index) => ({
-                         name: token.symbol,
-                         value: token.usd,
-                         color: VIBRANT_COLORS[index % VIBRANT_COLORS.length]
-                    }))
-                    .sort((a, b) => b.value - a.value)
-                    .slice(0, 8); // Top 8 tokens
-          } else if (selectedView === 'ethereum' && ethData) {
-               const tokens = [ethData.native, ...ethData.tokens];
-               return tokens
-                    .filter(token => token.usd > 1)
-                    .map((token, index) => ({
-                         name: token.symbol,
-                         value: token.usd,
-                         color: VIBRANT_COLORS[index % VIBRANT_COLORS.length]
-                    }));
-          } else if (selectedView === 'solana' && solData) {
-               const tokens = [solData.native, ...solData.tokens];
-               return tokens
-                    .filter(token => token.usd > 1)
-                    .map((token, index) => ({
-                         name: token.symbol,
-                         value: token.usd,
-                         color: VIBRANT_COLORS[index % VIBRANT_COLORS.length]
-                    }));
+     // Calculate combined totals
+     const getTotalBalance = () => {
+          let total = 0;
+          if (selectedChain === "all" || selectedChain === "ethereum") {
+               total += ethereumData?.totals.usd || 0;
           }
-          return [];
-     }, [selectedView, combinedData, ethData, solData]);
-
-     const barChartData = useMemo(() => {
-          const data = [];
-          if (ethData) {
-               data.push({
-                    name: 'Ethereum',
-                    value: ethData.totals.usd,
-                    color: '#627EEA'
-               });
+          if (selectedChain === "all" || selectedChain === "solana") {
+               total += solanaData?.totals.usd || 0;
           }
-          if (solData) {
-               data.push({
-                    name: 'Solana',
-                    value: solData.totals.usd,
-                    color: '#9945FF'
-               });
-          }
-          return data;
-     }, [ethData, solData]);
-
-     const renderSelectedData = () => {
-          if (selectedView === 'combined' && combinedData) {
-               return {
-                    totalUsd: combinedData.totalUsd,
-                    tokens: combinedData.allTokens,
-                    native: null
-               };
-          } else if (selectedView === 'ethereum' && ethData) {
-               return {
-                    totalUsd: ethData.totals.usd,
-                    tokens: ethData.tokens,
-                    native: ethData.native
-               };
-          } else if (selectedView === 'solana' && solData) {
-               return {
-                    totalUsd: solData.totals.usd,
-                    tokens: solData.tokens,
-                    native: solData.native
-               };
-          }
-          return null;
+          return total;
      };
 
-     const currentData = renderSelectedData();
+     // Prepare chart data
+     const getChartData = () => {
+          const chartData: any[] = [];
+
+          if ((selectedChain === "all" || selectedChain === "ethereum") && ethereumData) {
+               chartData.push({
+                    name: ethereumData.native.symbol,
+                    value: ethereumData.native.usd,
+                    chain: "Ethereum",
+               });
+
+               ethereumData.tokens.forEach(token => {
+                    if (token.usd > 1) { // Only show tokens worth more than $1
+                         chartData.push({
+                              name: token.symbol,
+                              value: token.usd,
+                              chain: "Ethereum",
+                         });
+                    }
+               });
+          }
+
+          if ((selectedChain === "all" || selectedChain === "solana") && solanaData) {
+               chartData.push({
+                    name: solanaData.native.symbol,
+                    value: solanaData.native.usd,
+                    chain: "Solana",
+               });
+
+               solanaData.tokens.forEach(token => {
+                    if (token.usd > 1) { // Only show tokens worth more than $1
+                         chartData.push({
+                              name: token.symbol.length > 10 ? token.symbol.slice(0, 10) + '...' : token.symbol,
+                              value: token.usd,
+                              chain: "Solana",
+                         });
+                    }
+               });
+          }
+
+          return chartData.sort((a, b) => b.value - a.value);
+     };
+
+     const COLORS = [
+          '#8B5CF6', '#EC4899', '#10B981', '#F59E0B', '#EF4444',
+          '#3B82F6', '#F97316', '#84CC16', '#06B6D4', '#8B5CF6'
+     ];
+
+     if (connectedWallets.length === 0) {
+          return (
+               <div className="text-center p-12 cartoon-card bg-gradient-to-r from-yellow-50 to-orange-50 rounded-3xl border-3 border-yellow-200">
+                    <div className="text-6xl mb-6">🔗</div>
+                    <h3 className="text-3xl font-black text-gray-800 mb-4">No Wallets Connected</h3>
+                    <p className="text-xl font-bold text-gray-600">Connect your wallets above to see your portfolio! 🚀</p>
+               </div>
+          );
+     }
+
+     const chartData = getChartData();
 
      return (
-          <div className="w-full max-w-7xl mx-auto mt-8 px-6">
-               <div className="cartoon-card bg-gradient-to-br from-white via-purple-50 to-pink-50 p-8 rounded-3xl mb-8">
-                    <div className="text-center mb-8">
-                         <h2 className="text-5xl font-black gradient-text mb-4">
-                              🎯 Your Crypto Portfolio
-                         </h2>
-                         <p className="text-xl font-bold text-gray-600">
-                              Live tracking of your digital assets! 📈✨
-                         </p>
+          <div className="space-y-8">
+               {/* Chain Filter */}
+               <div className="flex justify-center space-x-4">
+                    <button
+                         onClick={() => setSelectedChain("all")}
+                         className={`cartoon-button px-6 py-3 rounded-xl border-3 border-black font-bold ${
+                              selectedChain === "all"
+                                   ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                                   : "bg-white text-gray-800 hover:bg-gray-50"
+                         }`}
+                    >
+                         🌐 All Chains
+                    </button>
+                    <button
+                         onClick={() => setSelectedChain("ethereum")}
+                         className={`cartoon-button px-6 py-3 rounded-xl border-3 border-black font-bold ${
+                              selectedChain === "ethereum"
+                                   ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white"
+                                   : "bg-white text-gray-800 hover:bg-gray-50"
+                         }`}
+                    >
+                         🦄 Ethereum
+                    </button>
+                    <button
+                         onClick={() => setSelectedChain("solana")}
+                         className={`cartoon-button px-6 py-3 rounded-xl border-3 border-black font-bold ${
+                              selectedChain === "solana"
+                                   ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                                   : "bg-white text-gray-800 hover:bg-gray-50"
+                         }`}
+                    >
+                         👻 Solana
+                    </button>
+               </div>
+
+               {/* Total Balance */}
+               <div className="text-center p-8 cartoon-card bg-gradient-to-r from-green-50 to-blue-50 rounded-3xl border-3 border-green-200">
+                    <h3 className="text-2xl font-bold text-gray-700 mb-2">Total Portfolio Value</h3>
+                    <p className="text-5xl font-black bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+                         ${getTotalBalance().toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+               </div>
+
+               {loading ? (
+                    <div className="text-center p-12">
+                         <div className="inline-block w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                         <p className="text-xl font-bold text-gray-600">Loading portfolio data... 📊</p>
                     </div>
+               ) : (
+                    <div className="grid lg:grid-cols-2 gap-8">
+                         {/* Pie Chart */}
+                         <div className="cartoon-card bg-white p-6 rounded-3xl">
+                              <h3 className="text-2xl font-black text-gray-800 mb-6 text-center">📊 Portfolio Distribution</h3>
+                              {chartData.length > 0 ? (
+                                   <ResponsiveContainer width="100%" height={300}>
+                                        <PieChart>
+                                             <Pie
+                                                  data={chartData}
+                                                  cx="50%"
+                                                  cy="50%"
+                                                  outerRadius={100}
+                                                  dataKey="value"
+                                                  strokeWidth={3}
+                                                  stroke="#000"
+                                             >
+                                                  {chartData.map((entry, index) => (
+                                                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                  ))}
+                                             </Pie>
+                                             <Tooltip
+                                                  formatter={(value: any) => [`$${value.toFixed(2)}`, 'Value']}
+                                                  contentStyle={{
+                                                       backgroundColor: '#FFF',
+                                                       border: '3px solid #000',
+                                                       borderRadius: '12px',
+                                                       fontWeight: 'bold'
+                                                  }}
+                                             />
+                                             <Legend />
+                                        </PieChart>
+                                   </ResponsiveContainer>
+                              ) : (
+                                   <div className="text-center p-8 text-gray-500">
+                                        <div className="text-4xl mb-4">📈</div>
+                                        <p className="font-bold">No token data available</p>
+                                   </div>
+                              )}
+                         </div>
 
-                    <div className="flex flex-col sm:flex-row gap-4 items-center justify-center mb-8">
-                         <Button
-                              onClick={loadAllPortfolios}
-                              disabled={loading}
-                              className="cartoon-button bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-300 hover:to-blue-400 text-white font-black px-8 py-4 rounded-2xl border-4 border-black text-xl shadow-lg"
-                         >
-                              {loading ? "🔄 Loading..." : "🔃 Refresh Portfolio"}
-                         </Button>
+                         {/* Bar Chart */}
+                         <div className="cartoon-card bg-white p-6 rounded-3xl">
+                              <h3 className="text-2xl font-black text-gray-800 mb-6 text-center">📈 Token Values</h3>
+                              {chartData.length > 0 ? (
+                                   <ResponsiveContainer width="100%" height={300}>
+                                        <BarChart data={chartData.slice(0, 8)}>
+                                             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" strokeWidth={2} />
+                                             <XAxis
+                                                  dataKey="name"
+                                                  tick={{ fontSize: 12, fontWeight: 'bold' }}
+                                                  stroke="#374151"
+                                                  strokeWidth={2}
+                                             />
+                                             <YAxis
+                                                  tick={{ fontSize: 12, fontWeight: 'bold' }}
+                                                  stroke="#374151"
+                                                  strokeWidth={2}
+                                             />
+                                             <Tooltip
+                                                  formatter={(value: any) => [`$${value.toFixed(2)}`, 'Value']}
+                                                  contentStyle={{
+                                                       backgroundColor: '#FFF',
+                                                       border: '3px solid #000',
+                                                       borderRadius: '12px',
+                                                       fontWeight: 'bold'
+                                                  }}
+                                             />
+                                             <Bar
+                                                  dataKey="value"
+                                                  fill="#8B5CF6"
+                                                  stroke="#000"
+                                                  strokeWidth={2}
+                                                  radius={[4, 4, 0, 0]}
+                                             />
+                                        </BarChart>
+                                   </ResponsiveContainer>
+                              ) : (
+                                   <div className="text-center p-8 text-gray-500">
+                                        <div className="text-4xl mb-4">📊</div>
+                                        <p className="font-bold">No token data available</p>
+                                   </div>
+                              )}
+                         </div>
+                    </div>
+               )}
 
-                         <div className="flex gap-2">
-                              {['combined', 'ethereum', 'solana'].map((view) => (
-                                   <Button
-                                        key={view}
-                                        onClick={() => setSelectedView(view as any)}
-                                        className={`cartoon-button font-black px-6 py-3 rounded-xl border-3 border-black text-lg ${
-                                             selectedView === view
-                                                  ? 'bg-yellow-400 text-black'
-                                                  : 'bg-white text-gray-700 hover:bg-gray-100'
-                                        }`}
-                                   >
-                                        {view === 'combined' && '🌍 Combined'}
-                                        {view === 'ethereum' && '🔷 Ethereum'}
-                                        {view === 'solana' && '🌟 Solana'}
-                                   </Button>
+               {/* Detailed Balances */}
+               {((selectedChain === "all" || selectedChain === "ethereum") && ethereumData) && (
+                    <div className="cartoon-card bg-white p-6 rounded-3xl">
+                         <h3 className="text-2xl font-black text-gray-800 mb-6 flex items-center gap-3">
+                              🦄 Ethereum Portfolio
+                         </h3>
+                         <div className="space-y-4">
+                              <div className="flex justify-between items-center p-4 bg-blue-50 rounded-xl border-2 border-blue-200">
+                                   <div>
+                                        <p className="font-bold text-gray-800">{ethereumData.native.symbol}</p>
+                                        <p className="text-sm text-gray-600">{ethereumData.native.amount.toFixed(4)}</p>
+                                   </div>
+                                   <p className="font-black text-blue-600 text-lg">
+                                        ${ethereumData.native.usd.toFixed(2)}
+                                   </p>
+                              </div>
+
+                              {ethereumData.tokens.map((token, index) => (
+                                   <div key={index} className="flex justify-between items-center p-4 bg-gray-50 rounded-xl border-2 border-gray-200">
+                                        <div>
+                                             <p className="font-bold text-gray-800">{token.symbol}</p>
+                                             <p className="text-sm text-gray-600">{token.amount.toFixed(4)}</p>
+                                        </div>
+                                        <p className="font-black text-gray-600 text-lg">
+                                             ${token.usd.toFixed(2)}
+                                        </p>
+                                   </div>
                               ))}
                          </div>
                     </div>
+               )}
 
-                    {error && (
-                         <div className="cartoon-border bg-red-100 border-red-500 text-red-700 p-6 rounded-2xl mb-8 text-center text-xl font-bold">
-                              ⚠️ {error}
-                         </div>
-                    )}
-
-                    {currentData && (
-                         <div className="space-y-8">
-                              {/* Summary Cards */}
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                   <div className="cartoon-card bg-gradient-to-br from-green-200 to-green-100 p-6 rounded-2xl">
-                                        <div className="text-center">
-                                             <div className="text-4xl mb-2">💰</div>
-                                             <div className="text-lg font-bold text-green-700 mb-1">Total Portfolio</div>
-                                             <div className="text-3xl font-black text-green-800">
-                                                  {usdFormat(currentData.totalUsd)}
-                                             </div>
-                                        </div>
+               {((selectedChain === "all" || selectedChain === "solana") && solanaData) && (
+                    <div className="cartoon-card bg-white p-6 rounded-3xl">
+                         <h3 className="text-2xl font-black text-gray-800 mb-6 flex items-center gap-3">
+                              👻 Solana Portfolio
+                         </h3>
+                         <div className="space-y-4">
+                              <div className="flex justify-between items-center p-4 bg-purple-50 rounded-xl border-2 border-purple-200">
+                                   <div>
+                                        <p className="font-bold text-gray-800">{solanaData.native.symbol}</p>
+                                        <p className="text-sm text-gray-600">{solanaData.native.amount.toFixed(4)}</p>
                                    </div>
-                                   
-                                   <div className="cartoon-card bg-gradient-to-br from-blue-200 to-blue-100 p-6 rounded-2xl">
-                                        <div className="text-center">
-                                             <div className="text-4xl mb-2">🪙</div>
-                                             <div className="text-lg font-bold text-blue-700 mb-1">Total Tokens</div>
-                                             <div className="text-3xl font-black text-blue-800">
-                                                  {currentData.tokens.length + (currentData.native ? 1 : 0)}
-                                             </div>
-                                        </div>
-                                   </div>
-                                   
-                                   <div className="cartoon-card bg-gradient-to-br from-purple-200 to-purple-100 p-6 rounded-2xl">
-                                        <div className="text-center">
-                                             <div className="text-4xl mb-2">🌐</div>
-                                             <div className="text-lg font-bold text-purple-700 mb-1">Networks</div>
-                                             <div className="text-3xl font-black text-purple-800">
-                                                  {selectedView === 'combined' ? 
-                                                       `${ethData ? 1 : 0} + ${solData ? 1 : 0}` : 
-                                                       '1'
-                                                  }
-                                             </div>
-                                        </div>
-                                   </div>
+                                   <p className="font-black text-purple-600 text-lg">
+                                        ${solanaData.native.usd.toFixed(2)}
+                                   </p>
                               </div>
 
-                              {/* Charts */}
-                              {pieChartData.length > 0 && (
-                                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                        <div className="cartoon-card bg-white p-6 rounded-2xl">
-                                             <h3 className="text-2xl font-black text-center mb-4 text-purple-600">
-                                                  🥧 Token Distribution
-                                             </h3>
-                                             <ResponsiveContainer width="100%" height={300}>
-                                                  <PieChart>
-                                                       <Pie
-                                                            data={pieChartData}
-                                                            cx="50%"
-                                                            cy="50%"
-                                                            outerRadius={100}
-                                                            fill="#8884d8"
-                                                            dataKey="value"
-                                                            stroke="#000"
-                                                            strokeWidth={2}
-                                                       >
-                                                            {pieChartData.map((entry, index) => (
-                                                                 <Cell key={`cell-${index}`} fill={entry.color} />
-                                                            ))}
-                                                       </Pie>
-                                                       <Tooltip formatter={(value: any) => usdFormat(value)} />
-                                                       <Legend />
-                                                  </PieChart>
-                                             </ResponsiveContainer>
+                              {solanaData.tokens.map((token, index) => (
+                                   <div key={index} className="flex justify-between items-center p-4 bg-gray-50 rounded-xl border-2 border-gray-200">
+                                        <div>
+                                             <p className="font-bold text-gray-800">
+                                                  {token.symbol.length > 20 ? token.symbol.slice(0, 20) + '...' : token.symbol}
+                                             </p>
+                                             <p className="text-sm text-gray-600">{token.amount.toFixed(4)}</p>
                                         </div>
-
-                                        {selectedView === 'combined' && barChartData.length > 1 && (
-                                             <div className="cartoon-card bg-white p-6 rounded-2xl">
-                                                  <h3 className="text-2xl font-black text-center mb-4 text-blue-600">
-                                                       📊 Chain Comparison
-                                                  </h3>
-                                                  <ResponsiveContainer width="100%" height={300}>
-                                                       <BarChart data={barChartData}>
-                                                            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                                                            <XAxis 
-                                                                 dataKey="name" 
-                                                                 tick={{ fontWeight: 'bold' }}
-                                                                 stroke="#374151"
-                                                            />
-                                                            <YAxis 
-                                                                 tick={{ fontWeight: 'bold' }}
-                                                                 stroke="#374151"
-                                                            />
-                                                            <Tooltip formatter={(value: any) => usdFormat(value)} />
-                                                            <Bar 
-                                                                 dataKey="value" 
-                                                                 fill="#8884d8" 
-                                                                 stroke="#000"
-                                                                 strokeWidth={2}
-                                                                 radius={[8, 8, 0, 0]}
-                                                            />
-                                                       </BarChart>
-                                                  </ResponsiveContainer>
-                                             </div>
-                                        )}
+                                        <p className="font-black text-gray-600 text-lg">
+                                             ${token.usd.toFixed(2)}
+                                        </p>
                                    </div>
-                              )}
-
-                              {/* Token Table */}
-                              <div className="cartoon-card bg-white rounded-2xl overflow-hidden">
-                                   <div className="bg-gradient-to-r from-pink-400 to-purple-500 p-6 text-center">
-                                        <h3 className="text-3xl font-black text-white">
-                                             🪙 Token Holdings
-                                        </h3>
-                                   </div>
-                                   <div className="overflow-x-auto">
-                                        <table className="min-w-full">
-                                             <thead className="bg-gradient-to-r from-purple-200 to-pink-200">
-                                                  <tr>
-                                                       <th className="text-left px-6 py-4 border-b-4 border-black text-xl font-black text-purple-800">
-                                                            Token 🪙
-                                                       </th>
-                                                       <th className="text-left px-6 py-4 border-b-4 border-black text-xl font-black text-purple-800">
-                                                            Balance ⚖️
-                                                       </th>
-                                                       <th className="text-left px-6 py-4 border-b-4 border-black text-xl font-black text-purple-800">
-                                                            USD Value 💵
-                                                       </th>
-                                                       {selectedView === 'combined' && (
-                                                            <th className="text-left px-6 py-4 border-b-4 border-black text-xl font-black text-purple-800">
-                                                                 Network 🌐
-                                                            </th>
-                                                       )}
-                                                  </tr>
-                                             </thead>
-                                             <tbody>
-                                                  {currentData.native && (
-                                                       <tr className="hover:bg-yellow-50 transition-colors">
-                                                            <td className="px-6 py-4 border-b-2 border-gray-200 text-xl font-bold text-gray-800">
-                                                                 {currentData.native.symbol} ⭐
-                                                            </td>
-                                                            <td className="px-6 py-4 border-b-2 border-gray-200 text-lg font-semibold text-gray-700">
-                                                                 {numberFormat(currentData.native.amount)} {currentData.native.symbol}
-                                                            </td>
-                                                            <td className="px-6 py-4 border-b-2 border-gray-200 text-lg font-bold text-green-600">
-                                                                 {usdFormat(currentData.native.usd)}
-                                                            </td>
-                                                            {selectedView === 'combined' && (
-                                                                 <td className="px-6 py-4 border-b-2 border-gray-200 text-lg font-semibold">
-                                                                      Native
-                                                                 </td>
-                                                            )}
-                                                       </tr>
-                                                  )}
-                                                  {currentData.tokens
-                                                       .sort((a, b) => (b.usd || 0) - (a.usd || 0))
-                                                       .map((token, idx) => (
-                                                            <tr key={idx} className="hover:bg-blue-50 transition-colors">
-                                                                 <td className="px-6 py-4 border-b-2 border-gray-200 text-xl font-bold text-gray-800">
-                                                                      {token.symbol} 🎯
-                                                                 </td>
-                                                                 <td className="px-6 py-4 border-b-2 border-gray-200 text-lg font-semibold text-gray-700">
-                                                                      {numberFormat(token.amount)}
-                                                                 </td>
-                                                                 <td className="px-6 py-4 border-b-2 border-gray-200 text-lg font-bold text-green-600">
-                                                                      {usdFormat(token.usd || 0)}
-                                                                 </td>
-                                                                 {selectedView === 'combined' && (
-                                                                      <td className="px-6 py-4 border-b-2 border-gray-200 text-lg font-semibold">
-                                                                           {(token as any).network || 'Unknown'}
-                                                                      </td>
-                                                                 )}
-                                                            </tr>
-                                                       ))}
-                                             </tbody>
-                                        </table>
-                                   </div>
-                              </div>
+                              ))}
                          </div>
-                    )}
-
-                    {!currentData && !loading && (
-                         <div className="text-center py-12">
-                              <div className="text-6xl mb-4">🔗</div>
-                              <h3 className="text-3xl font-black text-gray-600 mb-4">
-                                   Connect Your Wallets First!
-                              </h3>
-                              <p className="text-xl text-gray-500">
-                                   Head to the wallet section above to get started 🚀
-                              </p>
-                         </div>
-                    )}
-               </div>
+                    </div>
+               )}
           </div>
      );
-};
-
-export default Portfolio;
+}
